@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import http from 'node:http';
 import TelegramBot from 'node-telegram-bot-api';
 import { config } from './config.js';
 import { today, lastNDates, sprintWeek, weekdayName } from './dates.js';
@@ -20,6 +21,18 @@ import { autoCommit } from './git.js';
 // Seed an external DATA_DIR (e.g. a fresh, empty Railway volume) from the
 // bundled starter files before anything tries to read from it.
 seedDataDirIfEmpty();
+
+// A Telegram long-polling bot never opens an HTTP port, but hosts like Railway
+// health-check "web services" by expecting one -- without this, they kill and
+// restart the container on a loop, thinking it's unhealthy. This listener does
+// nothing but keep that health check happy; it has no effect on the bot itself.
+const healthPort = process.env.PORT || 3000;
+http
+  .createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('sprint90 bot is running');
+  })
+  .listen(healthPort, () => console.log(`[health] listening on port ${healthPort}`));
 
 const bot = new TelegramBot(config.telegramToken, { polling: true });
 
