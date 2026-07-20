@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
-import { today, lastNDates, sprintWeek } from './dates.js';
+import { today, lastNDates, sprintWeek, dayType } from './dates.js';
 
 const TOTAL_BIBLE_CHAPTERS = 1189;
 
@@ -22,6 +22,26 @@ export function writeFileData(name, content) {
   fs.writeFileSync(dataPath(name), content, 'utf8');
 }
 
+/**
+ * On first run against an external DATA_DIR (e.g. a freshly-mounted, empty
+ * persistent volume), copy the bundled starter files in so the bot has
+ * something to work with. No-op if DATA_DIR already has the template (not
+ * first run) or if DATA_DIR is the bundled folder itself (default local setup).
+ */
+export function seedDataDirIfEmpty() {
+  if (path.resolve(config.dataDir) === path.resolve(config.seedDir)) return;
+  if (fs.existsSync(dataPath('daily-log-template.md'))) return;
+  if (!fs.existsSync(config.seedDir)) return;
+
+  fs.mkdirSync(config.dataDir, { recursive: true });
+  for (const name of fs.readdirSync(config.seedDir)) {
+    const src = path.join(config.seedDir, name);
+    if (fs.statSync(src).isFile()) {
+      fs.copyFileSync(src, path.join(config.dataDir, name));
+    }
+  }
+}
+
 export function dailyLogName(dateStr = today()) {
   return `daily-log-${dateStr}.md`;
 }
@@ -32,7 +52,11 @@ export function ensureDailyLog(dateStr = today()) {
   const p = dataPath(name);
   if (!fs.existsSync(p)) {
     const template = readFileOr('daily-log-template.md');
-    const seeded = template.replace('# Daily Log — [DATE]', `# Daily Log — ${dateStr}`);
+    let seeded = template.replace('# Daily Log — [DATE]', `# Daily Log — ${dateStr}`);
+    seeded = seeded.replace(
+      '**Day type:** Work day / Saturday / Sunday / Sabbath (Thu)',
+      `**Day type:** ${dayType(dateStr)}`,
+    );
     fs.writeFileSync(p, seeded, 'utf8');
   }
   return name;

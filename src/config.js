@@ -16,15 +16,22 @@ function required(name) {
   return v;
 }
 
+// The bundled starter files shipped in the repo (templates, goals, etc.) -- also
+// the default DATA_DIR when none is set. Kept separate from `dataDir` so an
+// external DATA_DIR (e.g. a mounted volume that starts empty, on a host like
+// Railway) can be seeded from it on first run. See files.js `seedDataDirIfEmpty`.
+const seedDir = path.resolve(here, '..', 'data');
+
 const dataDir = process.env.DATA_DIR
   ? path.resolve(process.cwd(), process.env.DATA_DIR)
-  : path.resolve(here, '..', 'data');
+  : seedDir;
 
 export const config = {
   telegramToken: required('TELEGRAM_BOT_TOKEN'),
   anthropicKey: required('ANTHROPIC_API_KEY'),
   model: process.env.ANTHROPIC_MODEL || 'claude-opus-4-8',
   dataDir,
+  seedDir,
   allowedChatId: process.env.ALLOWED_CHAT_ID
     ? String(process.env.ALLOWED_CHAT_ID).trim()
     : null,

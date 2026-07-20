@@ -2,7 +2,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { config } from './config.js';
 import { readFileOr } from './files.js';
 
-const client = new Anthropic({ apiKey: config.anthropicKey });
+// A short timeout so a blocked/dropped connection (e.g. a corporate firewall or
+// proxy that silently swallows the request) surfaces as a clear error within
+// seconds instead of hanging silently for the SDK's default ~10 minutes.
+const client = new Anthropic({ apiKey: config.anthropicKey, timeout: 30_000 });
 
 // Guardrail carried verbatim from the project's CLAUDE.md.
 const NEVER_INVENT =
@@ -11,54 +14,52 @@ const NEVER_INVENT =
   'minutes), leave that field null and put a short question in clarification_needed.';
 
 // Keys that represent actual log updates (everything except the meta fields).
+// Note: day_type is deliberately excluded -- it's derived from the date (see
+// dates.js `dayType()`), not parsed from the message. block3 (the rare 5-hour-day
+// third work block) is excluded too, to stay under the API's cap on schema fields
+// (see PARSE_SCHEMA below); edit that line manually on the rare day it applies.
 export const UPDATE_KEYS = [
-  'day_type', 'prayer_minutes', 'bible_chapters', 'bible_reached', 'bible_books_finished',
+  'prayer_minutes', 'bible_chapters', 'bible_reached', 'bible_books_finished',
   'exercise_type', 'exercise_duration', 'exercise_rest', 'donothing', 'sleep_hours',
   'sleep_quality', 'weight_kg', 'eating', 'block1_target', 'block1_status', 'block2_target',
-  'block2_status', 'block3', 'orgA_progress', 'orgB_progress', 'socialization', 'learning',
+  'block2_status', 'orgA_progress', 'orgB_progress', 'socialization', 'learning',
   'went_well', 'slipped',
 ];
 
-const nullable = (type) => ({ type: [type, 'null'] });
-
+// Fields are intentionally optional rather than nullable unions: Claude's structured
+// outputs caps schemas at 16 nullable/union-typed parameters, and separately at 24
+// total optional parameters. An omitted field means "nothing to log here" -- same as
+// null would -- and every call site already treats undefined and null identically
+// (see files.js `has()`, claude.js `hasUpdates()`).
 const PARSE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    day_type: nullable('string'),
-    prayer_minutes: nullable('number'),
-    bible_chapters: nullable('number'),
-    bible_reached: nullable('string'),
-    bible_books_finished: { type: ['array', 'null'], items: { type: 'string' } },
-    exercise_type: nullable('string'),
-    exercise_duration: nullable('string'),
-    exercise_rest: nullable('boolean'),
-    donothing: nullable('boolean'),
-    sleep_hours: nullable('number'),
-    sleep_quality: nullable('number'),
-    weight_kg: nullable('number'),
-    eating: nullable('string'),
-    block1_target: nullable('string'),
-    block1_status: nullable('string'),
-    block2_target: nullable('string'),
-    block2_status: nullable('string'),
-    block3: nullable('string'),
-    orgA_progress: nullable('string'),
-    orgB_progress: nullable('string'),
-    socialization: nullable('string'),
-    learning: nullable('string'),
-    went_well: nullable('string'),
-    slipped: nullable('string'),
-    clarification_needed: nullable('string'),
-    confirmation: nullable('string'),
+    prayer_minutes: { type: 'number' },
+    bible_chapters: { type: 'number' },
+    bible_reached: { type: 'string' },
+    bible_books_finished: { type: 'array', items: { type: 'string' } },
+    exercise_type: { type: 'string' },
+    exercise_duration: { type: 'string' },
+    exercise_rest: { type: 'boolean' },
+    donothing: { type: 'boolean' },
+    sleep_hours: { type: 'number' },
+    sleep_quality: { type: 'number' },
+    weight_kg: { type: 'number' },
+    eating: { type: 'string' },
+    block1_target: { type: 'string' },
+    block1_status: { type: 'string' },
+    block2_target: { type: 'string' },
+    block2_status: { type: 'string' },
+    orgA_progress: { type: 'string' },
+    orgB_progress: { type: 'string' },
+    socialization: { type: 'string' },
+    learning: { type: 'string' },
+    went_well: { type: 'string' },
+    slipped: { type: 'string' },
+    clarification_needed: { type: 'string' },
+    confirmation: { type: 'string' },
   },
-  required: [
-    'day_type', 'prayer_minutes', 'bible_chapters', 'bible_reached', 'bible_books_finished',
-    'exercise_type', 'exercise_duration', 'exercise_rest', 'donothing', 'sleep_hours',
-    'sleep_quality', 'weight_kg', 'eating', 'block1_target', 'block1_status', 'block2_target',
-    'block2_status', 'block3', 'orgA_progress', 'orgB_progress', 'socialization', 'learning',
-    'went_well', 'slipped', 'clarification_needed', 'confirmation',
-  ],
 };
 
 function textOf(response) {
@@ -137,7 +138,7 @@ export async function generateReview({ kind, template, dailies, stats, goals, bi
     `markdown, no preamble.`;
 
   const user =
-    `Pre-computed stats (authoritative — use these, do not recompute differently):\n` +
+    `Pre-computed stats (authoritative -- use these, do not recompute differently):\n` +
     `${JSON.stringify(stats, null, 2)}\n\n` +
     `Bible progress: ${bible.completed}/1189 (${bible.pct}%)\n` +
     `Latest recorded weight: ${weight ?? 'not recorded'} kg (target 75kg)\n\n` +

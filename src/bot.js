@@ -12,9 +12,14 @@ import {
   readFileOr,
   writeFileData,
   dataPath,
+  seedDataDirIfEmpty,
 } from './files.js';
 import { parseMessage, hasUpdates, generateReview } from './claude.js';
 import { autoCommit } from './git.js';
+
+// Seed an external DATA_DIR (e.g. a fresh, empty Railway volume) from the
+// bundled starter files before anything tries to read from it.
+seedDataDirIfEmpty();
 
 const bot = new TelegramBot(config.telegramToken, { polling: true });
 
@@ -69,17 +74,17 @@ function statusText() {
 
 // --- commands -------------------------------------------------------------
 const HELP = [
-  '90-Day Sprint logging bot. Just text me what you did and I file it — e.g.',
+  '90-Day Sprint logging bot. Just text me what you did and I file it -- e.g.',
   '  "did 45 min prayer this morning"',
   '  "read 14 chapters, reached Exodus 12"',
   '  "weighed in at 81.5"',
   '  "skipped exercise, back\'s sore"',
   '',
   'Commands:',
-  '/status — quick snapshot (Bible %, prayer avg, exercise days, weight)',
-  '/review — fill this week\'s review from the last 7 daily logs',
-  '/month — fill the monthly review from the sprint so far',
-  '/help — this message',
+  '/status -- quick snapshot (Bible %, prayer avg, exercise days, weight)',
+  '/review -- fill this week\'s review from the last 7 daily logs',
+  '/month -- fill the monthly review from the sprint so far',
+  '/help -- this message',
 ].join('\n');
 
 bot.onText(/^\/(start|help)\b/, (msg) => {
@@ -93,7 +98,7 @@ bot.onText(/^\/status\b/, async (msg) => {
     await bot.sendMessage(msg.chat.id, statusText());
   } catch (err) {
     console.error('[/status]', err);
-    await bot.sendMessage(msg.chat.id, '⚠️ Could not build the snapshot — check the bot logs.');
+    await bot.sendMessage(msg.chat.id, '⚠️ Could not build the snapshot -- check the bot logs.');
   }
 });
 
@@ -150,7 +155,7 @@ async function runReview(chatId, kind) {
     await bot.sendMessage(chatId, `Saved as ${outName} ✅`);
   } catch (err) {
     console.error(`[/${kind} review]`, err);
-    await bot.sendMessage(chatId, '⚠️ Could not build the review — check the bot logs.');
+    await bot.sendMessage(chatId, '⚠️ Could not build the review -- check the bot logs.');
   }
 }
 
@@ -167,25 +172,32 @@ bot.on('message', async (msg) => {
   try {
     await bot.sendChatAction(chatId, 'typing');
     const dateStr = today();
+    console.log('[msg] asking Claude to parse...');
     const parsed = await parseMessage(msg.text, dateStr);
+    console.log('[msg] got parsed result:', JSON.stringify(parsed));
 
     if (!hasUpdates(parsed)) {
-      const q = parsed.clarification_needed || "I couldn't tell what to log from that — can you add a bit more detail (and any numbers)?";
+      const q = parsed.clarification_needed || "I couldn't tell what to log from that -- can you add a bit more detail (and any numbers)?";
+      console.log('[msg] nothing to log, asking for clarification');
       await bot.sendMessage(chatId, q);
+      console.log('[msg] clarification sent');
       return;
     }
 
     ensureDailyLog(dateStr);
     const written = applyParsedUpdate(parsed, dateStr);
+    console.log('[msg] wrote files:', written);
     await autoCommit(`log ${dateStr}: ${parsed.confirmation || 'update'}`);
 
     let reply = parsed.confirmation ? `Logged: ${parsed.confirmation} ✅` : 'Logged ✅';
     if (parsed.clarification_needed) reply += `\n\n${parsed.clarification_needed}`;
-    if (written.length === 0) reply += '\n(No tracker file changed — nothing matched.)';
+    if (written.length === 0) reply += '\n(No tracker file changed -- nothing matched.)';
+    console.log('[msg] sending reply to Telegram...');
     await bot.sendMessage(chatId, reply);
+    console.log('[msg] reply sent successfully');
   } catch (err) {
-    console.error('[message]', err);
-    await bot.sendMessage(chatId, '⚠️ Something went wrong logging that — check the bot logs.');
+    console.error('[message] ERROR:', err);
+    await bot.sendMessage(chatId, '⚠️ Something went wrong logging that -- check the bot logs.');
   }
 });
 
@@ -194,18 +206,18 @@ function scheduleDailyReminder() {
   if (!config.dailyReminderTime) return;
   const m = config.dailyReminderTime.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) {
-    console.warn(`[reminder] DAILY_REMINDER_TIME "${config.dailyReminderTime}" is not HH:MM — skipping.`);
+    console.warn(`[reminder] DAILY_REMINDER_TIME "${config.dailyReminderTime}" is not HH:MM -- skipping.`);
     return;
   }
   if (!config.allowedChatId) {
-    console.warn('[reminder] DAILY_REMINDER_TIME is set but ALLOWED_CHAT_ID is not — cannot target a chat, skipping.');
+    console.warn('[reminder] DAILY_REMINDER_TIME is set but ALLOWED_CHAT_ID is not -- cannot target a chat, skipping.');
     return;
   }
   const [, hh, mm] = m;
 
   const fire = async () => {
     try {
-      await bot.sendMessage(config.allowedChatId, `🌙 Evening check-in — anything to log for ${today()}? (/status for a snapshot)`);
+      await bot.sendMessage(config.allowedChatId, `🌙 Evening check-in -- anything to log for ${today()}? (/status for a snapshot)`);
     } catch (err) {
       console.error('[reminder]', err);
     }

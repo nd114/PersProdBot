@@ -42,3 +42,12 @@ export function weekdayName(dateStr = today()) {
     weekday: 'long',
   });
 }
+
+/** The day-type label from schedule.md, fixed by day of week -- never guessed. */
+export function dayType(dateStr = today()) {
+  const day = new Date(`${dateStr}T00:00:00`).getDay(); // 0=Sun ... 6=Sat
+  if (day === 4) return 'Sabbath (Thu)';
+  if (day === 6) return 'Saturday';
+  if (day === 0) return 'Sunday';
+  return 'Work day';
+}
